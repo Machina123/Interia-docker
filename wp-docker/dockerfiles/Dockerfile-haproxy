@@ -1,0 +1,3 @@
+# HAproxy image tag: 2.4.3-alpine linux/amd64
+FROM library/haproxy@sha256:2b51b9f7b11fd789be82b17272b8d50c03286b07533abdd2917b4f67b6c551b9
+COPY haproxy.cfg /usr/local/etc/haproxy/haproxy.cfg

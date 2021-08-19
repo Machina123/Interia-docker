@@ -1,53 +1,41 @@
-version: "3.8"
-
 services:
-  wp-front1:
-    image: wordpress:apache
+  wp-front:
+    # Wordpress image tag: 5.8.0-apache
+    image: wordpress@sha256:865ea4e55495630ae167c2240f6c9969e2fd185e2990c5edfac0914ce513b0cb
     restart: always
     depends_on: 
       - db
       - haproxy
       - varnish
-      - hitch
     env_file:
       - wp.env
     volumes: 
       - wp-www-root:/var/www/html
-    networks: 
+      - ${PWD}/healthprobe.php:/var/www/html/healthprobe.php:ro
+    networks:
       - wpnet
+    deploy:
+      mode: replicated
+      replicas: 2
 
-  wp-front2:
-    image: wordpress:apache
-    restart: always
-    depends_on: 
-      - db
-      - haproxy
-      - varnish
-      - hitch
-    env_file:
-      - wp.env
-    volumes: 
-      - wp-www-root:/var/www/html
-    networks: 
-      - wpnet
-    
   db:
-    image: percona:8
+    image: percona@sha256:5bc1c13c8f4adfd76ceaac425877e2de2fcd9c33ab685c639e55b23e97eb0c0a
     restart: always
     environment: 
       MYSQL_USER: wordpress
       MYSQL_PASSWORD: wpTest2021!
       MYSQL_DATABASE: wordpress
       MYSQL_ROOT_PASSWORD: zaq1@WSXcde3
+    networks:
+      - wpnet
     volumes:
       - wp-db-root:/var/lib/mysql
-    networks: 
-      - wpnet
+      - ${PWD}/context/mysql:/docker-entrypoint-initdb.d/:ro
 
   haproxy:
     build:
-      context: .
-      dockerfile: Dockerfile-haproxy
+      context: ${PWD}/context/haproxy
+      dockerfile: ${PWD}/dockerfiles/Dockerfile-haproxy
     restart: unless-stopped
     networks:
       - wpnet
@@ -60,30 +48,18 @@ services:
 
   varnish:
     build: 
-      context: .
-      dockerfile: Dockerfile-varnish
+      context: ${PWD}/context/varnish
+      dockerfile: ${PWD}/dockerfiles/Dockerfile-varnish
     restart: unless-stopped
-    depends_on: 
-      - haproxy
     networks:
       - wpnet
+    depends_on: 
+      - haproxy
     ports:
       - 8080:80
     tmpfs: /var/lib/varnish:exec
     environment:
       VARNISH_SIZE: 1G
-  
-  hitch:
-    build:
-      context: .
-      dockerfile: Dockerfile-hitch
-    networks: 
-      - wpnet
-    depends_on: 
-      - varnish
-    restart: unless-stopped
-    ports:
-      - 8443:443
 
 
 volumes:
