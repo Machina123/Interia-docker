@@ -1,0 +1,2 @@
+FROM library/varnish:stable
+COPY default.vcl /etc/varnish/

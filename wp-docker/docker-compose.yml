@@ -1,0 +1,97 @@
+version: "3.8"
+
+services:
+  wp-front1:
+    image: wordpress:apache
+    restart: always
+    depends_on: 
+      - db
+      - haproxy
+      - varnish
+      - hitch
+    env_file:
+      - wp.env
+    volumes: 
+      - wp-www-root:/var/www/html
+    networks: 
+      - wpnet
+
+  wp-front2:
+    image: wordpress:apache
+    restart: always
+    depends_on: 
+      - db
+      - haproxy
+      - varnish
+      - hitch
+    env_file:
+      - wp.env
+    volumes: 
+      - wp-www-root:/var/www/html
+    networks: 
+      - wpnet
+    
+  db:
+    image: percona:8
+    restart: always
+    environment: 
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: wpTest2021!
+      MYSQL_DATABASE: wordpress
+      MYSQL_ROOT_PASSWORD: zaq1@WSXcde3
+    volumes:
+      - wp-db-root:/var/lib/mysql
+    networks: 
+      - wpnet
+
+  haproxy:
+    build:
+      context: .
+      dockerfile: Dockerfile-haproxy
+    restart: unless-stopped
+    networks:
+      - wpnet
+    ports:
+      - 8180:80
+      - 8181:81
+      - 55666:5666
+    depends_on: 
+      - db
+
+  varnish:
+    build: 
+      context: .
+      dockerfile: Dockerfile-varnish
+    restart: unless-stopped
+    depends_on: 
+      - haproxy
+    networks:
+      - wpnet
+    ports:
+      - 8080:80
+    tmpfs: /var/lib/varnish:exec
+    environment:
+      VARNISH_SIZE: 1G
+  
+  hitch:
+    build:
+      context: .
+      dockerfile: Dockerfile-hitch
+    networks: 
+      - wpnet
+    depends_on: 
+      - varnish
+    restart: unless-stopped
+    ports:
+      - 8443:443
+
+
+volumes:
+  wp-www-root: {}
+  wp-db-root: {}
+
+networks:
+  wpnet:
+    ipam:
+      config:
+        - subnet: "192.168.10.0/24"
