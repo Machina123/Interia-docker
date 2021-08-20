@@ -1,0 +1,19 @@
+# PHP image tag: 7.4-apache-bullseye
+FROM php@sha256:7cc556666afc9b485e0b69e6a80d396d18e7e5da2f2905cbeca0940e104fbb89
+
+COPY etc_apache2/ /etc/apache2
+
+RUN docker-php-ext-install mysqli && \
+    curl -O https://wordpress.org/latest.tar.gz && \
+    tar -xvf latest.tar.gz && \
+    rm latest.tar.gz && \
+    chown -R www-data:www-data /var/www/html/wordpress && \
+    find /var/www/html/wordpress/ -type d -exec chmod 750 {} \; && \
+    find /var/www/html/wordpress/ -type f -exec chmod 640 {} \; && \
+    a2enmod rewrite && \
+    a2enconf 01-custom-log-format
+
+EXPOSE 8080 8443
+
+WORKDIR /var/www/html/wordpress
+USER www-data

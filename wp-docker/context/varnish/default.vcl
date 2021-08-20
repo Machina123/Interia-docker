@@ -20,7 +20,7 @@ probe backend_probe {
 
 backend wordpress1 {
     .host = "192.168.10.5";
-    .port = "80";
+    .port = "8080";
     .connect_timeout = 30s;
     .first_byte_timeout = 60s;
     .between_bytes_timeout = 10s;
@@ -30,7 +30,7 @@ backend wordpress1 {
 
 backend wordpress2 {
     .host = "192.168.10.6";
-    .port = "80";
+    .port = "8080";
     .connect_timeout = 30s;
     .first_byte_timeout = 60s;
     .between_bytes_timeout = 10s;
