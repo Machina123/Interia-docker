@@ -19,7 +19,7 @@ services:
       - /tmp
       - /run/lock/apache2
       - /run/apache2
-      - ${PWD}/healthprobe.php:/var/www/html/wordpress/healthprobe.php:ro
+      - ${PWD}/context/wordpress/document-root/healthprobe.php:/var/www/html/wordpress/healthprobe.php:ro
       - ${PWD}/context/wordpress/document-root/wp-config.php:/var/www/html/wordpress/wp-config.php:ro
     networks:
       - wpnet
