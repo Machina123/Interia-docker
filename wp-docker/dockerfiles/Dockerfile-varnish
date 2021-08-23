@@ -1,3 +1,30 @@
-# Varnish image tag: 6.0.8 linux/amd64
-FROM library/varnish@sha256:2dba617d474e406cc28dd18939f4e6158d0d4055970e39e95ddd328da5594524
-COPY default.vcl /etc/varnish/
+# Varnish image tag: 6.5.1 linux/amd64
+FROM library/varnish@sha256:45b78b0eb3c27588535d92b1628bf0cc6513f946ab7bd99db7b4a4ae912d7e66
+
+ENV TZ=Europe/Warsaw
+ENV VMOD_DYNAMIC_VER="2.3.1"
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+RUN BUILD_PKGS="build-essential pkg-config automake libtool make python3-docutils wget varnish-dev" && \
+    RUNTIME_PKGS="procps curl" && \
+    apt-get update && \
+    apt install -y --no-install-recommends $BUILD_PKGS $RUNTIME_PKGS && \
+    wget https://github.com/nigoroll/libvmod-dynamic/archive/refs/tags/v${VMOD_DYNAMIC_VER}.tar.gz && \
+    tar -zxvf v${VMOD_DYNAMIC_VER}.tar.gz && \
+    cd libvmod-dynamic-${VMOD_DYNAMIC_VER} && \
+    export vmoddir="/usr/lib/varnish/vmods" && \
+    export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:${PREFIX}/lib/pkgconfig/:/usr/lib/x86_64-linux-gnu/pkgconfig/ && \
+    export ACLOCAL_PATH=${ACLOCAL_PATH}:${PREFIX}/share/aclocal && \
+    ./autogen.sh && \
+    ./configure --without-getdns && \
+    make && \
+    make install vmoddir=${vmoddir} && \
+    apt purge -y --auto-remove $BUILD_PKGS && \
+    apt -qq -y clean && \
+    rm -fr /var/cache/apt/* /var/lib/apt/lists/* && \
+    cd ../ && \ 
+    rm -rf v${VMOD_DYNAMIC_VER}.tar.gz libvmod-dynamic-${VMOD_DYNAMIC_VER}
+
+COPY entrypoint.sh /
+
+ENTRYPOINT [ "/entrypoint.sh" ]

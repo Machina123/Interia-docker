@@ -1,5 +1,5 @@
 services:
-  wp-front:
+  wpfront:
     # Wordpress image tag: 5.8.0-apache
     # image: wordpress@sha256:865ea4e55495630ae167c2240f6c9969e2fd185e2990c5edfac0914ce513b0cb
     build:
@@ -56,10 +56,9 @@ services:
       - db
 
   varnish:
-    # build: 
-    #   context: ${PWD}/context/varnish
-    #   dockerfile: ${PWD}/dockerfiles/Dockerfile-varnish
-    image: library/varnish@sha256:2dba617d474e406cc28dd18939f4e6158d0d4055970e39e95ddd328da5594524
+    build: 
+      context: ${PWD}/context/varnish
+      dockerfile: ${PWD}/dockerfiles/Dockerfile-varnish
     restart: unless-stopped
     networks:
       - wpnet
@@ -67,15 +66,14 @@ services:
       - haproxy
     ports:
       - 8080:80
+    env_file:
+      - varnish.env
     volumes:
       - ${PWD}/context/varnish/default.vcl:/etc/varnish/default.vcl:ro
     tmpfs: /var/lib/varnish:exec
-    environment:
-      VARNISH_SIZE: 1G
 
 
 volumes:
-  wp-www-root: {}
   wp-db-root: {}
 
 networks:

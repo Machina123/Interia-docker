@@ -1,6 +1,9 @@
 vcl 4.0;
 
-import directors;
+// import directors;
+import dynamic;
+
+backend default none;
 
 probe backend_probe {
     .request =
@@ -18,36 +21,21 @@ probe backend_probe {
     .expected_response = 204;
 }
 
-backend wordpress1 {
-    .host = "192.168.10.5";
-    .port = "8080";
-    .connect_timeout = 30s;
-    .first_byte_timeout = 60s;
-    .between_bytes_timeout = 10s;
-    .max_connections = 100;
-    .probe = backend_probe;                                                                   
-}
-
-backend wordpress2 {
-    .host = "192.168.10.6";
-    .port = "8080";
-    .connect_timeout = 30s;
-    .first_byte_timeout = 60s;
-    .between_bytes_timeout = 10s;
-    .max_connections = 100;
-    .probe = backend_probe;                                                                  
-}
-
 sub vcl_init {
-    new all_wordpress = directors.round_robin();
-    all_wordpress.add_backend(wordpress1);
-    all_wordpress.add_backend(wordpress2);
+    new all_wordpress = dynamic.director(
+        probe = backend_probe,
+        ttl = 5m,
+        connect_timeout = 10s
+    );
+    // all_wordpress.debug(true);
+}
+
+sub vcl_backend_fetch {
+    set bereq.backend = all_wordpress.backend("wpfront", port="8080");
+    return (fetch);
 }
 
 sub vcl_recv {
-    set req.backend_hint = all_wordpress.backend();
-    // set req.backend_hint = wordpress;
-
     # Only cache GET or HEAD requests. This makes sure the POST requests are always passed.
     if (req.method != "GET" && req.method != "HEAD") {
         return (pass);
