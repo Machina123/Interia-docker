@@ -49,9 +49,11 @@ services:
     networks:
       - wpnet
     ports:
-      - 8180:80
-      - 8181:81
+      - 50080:80
+      - 50443:443
       - 55666:5666
+    volumes:
+      - ${PWD}/context/haproxy/cert.pem:/etc/ssl/certs/test/cert.pem:ro
     depends_on: 
       - db
 
