@@ -19,7 +19,7 @@ fi
     -w /proc/self/fd/1 \
     -D \
     -P /run/varnishncsa.pid \
-    -F '{\"@timestamp_real\": \"%{%Y-%m-%dT%H:%M:%S%z}t\", \"client_ip\":\"%{X-Actual-IP}i\", \"remote_use\" : \"%u\", \"http_host\":\"%{host}i\", \"x_forwarded_for\" : \"%{X-Forwarded-For}i\", \"duration_usec\": %D, \"http_method\":\"%m\", \"http_request\":\"%U\",\"http_query\": \"%q\", \"http_version\": \"%H\", \"status_code\": %s, \"bytes\": %b, \"http_referrer\":\"%{Referer}i\", \"user_agent\":\"%{User-agent}i\", \"hit_miss\":\"%{Varnish:hitmiss}x\", \"handling\" : \"%{Varnish:handling}x\", \"time_first_byte\" : \"%{Varnish:time_firstbyte}x\"}'
+    -F "${VARNISHNCSA_LOG_FORMAT}"
 status=$?
 if [ $status -ne 0 ]; then
   echo "Failed to start varnishncsa: $status"

@@ -1,3 +1,8 @@
+x-logging: &logging
+  logging:
+    options:
+      tag: "{{.Name}}"
+
 services:
   wpfront:
     # Wordpress image tag: 5.8.0-apache
@@ -26,6 +31,7 @@ services:
     deploy:
       mode: replicated
       replicas: 2
+    <<: *logging
 
   db:
     image: percona@sha256:5bc1c13c8f4adfd76ceaac425877e2de2fcd9c33ab685c639e55b23e97eb0c0a
@@ -40,6 +46,7 @@ services:
     volumes:
       - wp-db-root:/var/lib/mysql
       - ${PWD}/context/mysql:/docker-entrypoint-initdb.d/:ro
+    <<: *logging
 
   haproxy:
     build:
@@ -49,13 +56,15 @@ services:
     networks:
       - wpnet
     ports:
-      - 50080:80
-      - 50443:443
+      - 80:80
+      - 443:443
       - 55666:5666
     volumes:
+      - ${PWD}/context/haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
       - ${PWD}/context/haproxy/cert.pem:/etc/ssl/certs/test/cert.pem:ro
     depends_on: 
       - db
+    <<: *logging
 
   varnish:
     build: 
@@ -73,6 +82,7 @@ services:
     volumes:
       - ${PWD}/context/varnish/default.vcl:/etc/varnish/default.vcl:ro
     tmpfs: /var/lib/varnish:exec
+    <<: *logging
 
 
 volumes:

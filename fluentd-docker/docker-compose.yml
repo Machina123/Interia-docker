@@ -1,0 +1,10 @@
+services:
+  fluentd:
+    image: fluent/fluentd:v1.13.0-debian-1.0
+    user: root:root
+    volumes:
+      - /var/lib/docker/containers:/mnt/docker-containers:ro
+      - /tmp/fluentd-out:/mnt/output:rw
+      - $PWD/context/fluentd/fluentd.conf:/fluentd/etc/fluent.conf
+    logging:
+      driver: local

@@ -83,7 +83,11 @@ define( 'WP_DEBUG', false );
 
 /* Add any custom values between this line and the "stop editing" line. */
 
+define('WP_SITEURL', 'https://patryk.staz.inpl.work');
+define('WP_HOME', 'https://patryk.staz.inpl.work');
 
+define('FORCE_SSL_ADMIN', true);
+$_SERVER['HTTPS']='on';
 
 /* That's all, stop editing! Happy publishing. */
 
