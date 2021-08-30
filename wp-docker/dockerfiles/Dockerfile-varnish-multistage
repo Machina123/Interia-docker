@@ -1,0 +1,48 @@
+# Varnish image tag: 6.5.1 linux/amd64
+FROM library/varnish@sha256:45b78b0eb3c27588535d92b1628bf0cc6513f946ab7bd99db7b4a4ae912d7e66 AS builder
+
+ENV TZ=Europe/Warsaw
+ENV VMOD_DYNAMIC_VER="2.3.1"
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+RUN BUILD_PKGS="build-essential pkg-config automake libtool make python3-docutils wget varnish-dev" && \
+    RUNTIME_PKGS="" && \
+    apt-get update && \
+    apt install -y --no-install-recommends $BUILD_PKGS $RUNTIME_PKGS && \
+    wget https://github.com/nigoroll/libvmod-dynamic/archive/refs/tags/v${VMOD_DYNAMIC_VER}.tar.gz && \
+    tar -zxvf v${VMOD_DYNAMIC_VER}.tar.gz && \
+    cd libvmod-dynamic-${VMOD_DYNAMIC_VER} && \
+    export vmoddir="/usr/lib/varnish/vmods" && \
+    export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:${PREFIX}/lib/pkgconfig/:/usr/lib/x86_64-linux-gnu/pkgconfig/ && \
+    export ACLOCAL_PATH=${ACLOCAL_PATH}:${PREFIX}/share/aclocal && \
+    ./autogen.sh && \
+    ./configure --without-getdns && \
+    make && \
+    make install vmoddir=${vmoddir} && \
+    apt purge -y --auto-remove $BUILD_PKGS && \
+    apt -qq -y clean && \
+    rm -fr /var/cache/apt/* /var/lib/apt/lists/* && \
+    cd ../ && \ 
+    rm -rf v${VMOD_DYNAMIC_VER}.tar.gz libvmod-dynamic-${VMOD_DYNAMIC_VER}
+
+FROM debian:buster-20210816-slim
+COPY --from=builder /usr/bin/varnish* /usr/bin/
+COPY --from=builder /usr/sbin/varnish* /usr/sbin/
+COPY --from=builder /usr/lib/varnish/ /usr/lib/varnish/
+COPY --from=builder /usr/share/varnish /usr/share/varnish
+COPY --from=builder /usr/lib/libvarnishapi.so.2.0.0 /usr/lib/libvarnishapi.so.2.0.0
+COPY --from=builder /usr/lib/x86_64-linux-gnu/libjemalloc.so.2 /usr/lib/x86_64-linux-gnu/libjemalloc.so.2
+COPY --from=builder /usr/lib/libvarnishapi.so.2 /usr/lib/libvarnishapi.so.2
+COPY entrypoint.sh /
+
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone && \
+    apt update && \
+    apt install -y --no-install-recommends libidn2-0 libssl1.1 libc6-dev gcc procps curl && \
+    apt -y autoremove && \
+    apt -y clean && \
+    rm -fr /var/cache/* /var/lib/apt/lists && \
+    chmod +x /entrypoint.sh
+
+WORKDIR /etc/varnish
+
+ENTRYPOINT [ "/entrypoint.sh" ]

@@ -69,7 +69,7 @@ services:
   varnish:
     build: 
       context: ${PWD}/context/varnish
-      dockerfile: ${PWD}/dockerfiles/Dockerfile-varnish
+      dockerfile: ${PWD}/dockerfiles/Dockerfile-varnish-multistage
     restart: unless-stopped
     networks:
       - wpnet
