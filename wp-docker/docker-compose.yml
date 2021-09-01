@@ -20,7 +20,7 @@ services:
     read_only: yes
     user: "www-data:www-data"
     volumes: 
-      - /var/www/html/wordpress/wp-content
+      - wp-content-root:/var/www/html/wordpress/wp-content
       - /tmp
       - /run/lock/apache2
       - /run/apache2
@@ -45,6 +45,7 @@ services:
       - wpnet
     volumes:
       - wp-db-root:/var/lib/mysql
+      - wp-db-log-root:/var/log/mysql
       - ${PWD}/context/mysql:/docker-entrypoint-initdb.d/:ro
     <<: *logging
 
@@ -87,6 +88,8 @@ services:
 
 volumes:
   wp-db-root: {}
+  wp-db-log-root: {}
+  wp-content-root: {}
 
 networks:
   wpnet:

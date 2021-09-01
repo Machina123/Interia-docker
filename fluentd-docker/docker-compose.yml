@@ -2,7 +2,9 @@ x-common: &common
   networks:
     - fluentd-net
   logging:
-    driver: local
+    options:
+      tag: "{{.Name}}"
+  restart: unless-stopped
 
 services:
   fluentd:
@@ -12,8 +14,11 @@ services:
     user: root:root
     volumes:
       - /var/lib/docker/containers:/mnt/docker-containers:ro
+      - /var/lib/docker/volumes/wp-docker_wp-db-root/_data:/mnt/mysql-data:ro
       - /tmp/fluentd-out:/mnt/output:rw
       - $PWD/context/fluentd/fluentd.conf:/fluentd/etc/fluent.conf
+    logging:
+      driver: local
     <<: *common
   
   loki:
@@ -23,8 +28,6 @@ services:
     command: -config.file=/etc/loki/local-config.yaml
     volumes:
       - ${PWD}/context/loki/loki.yaml:/etc/loki/local-config.yaml:ro
-    networks:
-      - fluentd-net
     <<: *common
   
   grafana:
