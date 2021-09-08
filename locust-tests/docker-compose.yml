@@ -1,0 +1,17 @@
+services:
+  locust:
+    # Locust image tag: 2.2.1 linux/amd64 
+    image: locustio/locust@sha256:21e00496fe2302e25caf383ccba0257d9547e0abda3e728d04e1e7563c7cea70
+    ports: 
+      - 8089:8089
+    volumes:
+      - ${PWD}/tests:/mnt/locust
+    command: -f /mnt/locust/task1/locustfile.py
+    networks:
+      - locustnet
+
+networks:
+  locustnet:
+    ipam:
+      config:
+        - subnet: "192.168.11.0/24"

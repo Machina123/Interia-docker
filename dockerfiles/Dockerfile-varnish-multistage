@@ -19,13 +19,19 @@ RUN BUILD_PKGS="build-essential pkg-config automake libtool make python3-docutil
     ./configure --without-getdns && \
     make && \
     make install vmoddir=${vmoddir} && \
+    cd ../ && \ 
+    wget https://github.com/jonnenauha/prometheus_varnish_exporter/releases/download/1.6/prometheus_varnish_exporter-1.6.linux-amd64.tar.gz && \
+    tar -zxvf prometheus_varnish_exporter-1.6.linux-amd64.tar.gz && \
+    cp prometheus_varnish_exporter-1.6.linux-amd64/prometheus_varnish_exporter /usr/bin/ && \
     apt purge -y --auto-remove $BUILD_PKGS && \
     apt -qq -y clean && \
     rm -fr /var/cache/apt/* /var/lib/apt/lists/* && \
-    cd ../ && \ 
-    rm -rf v${VMOD_DYNAMIC_VER}.tar.gz libvmod-dynamic-${VMOD_DYNAMIC_VER}
+    rm -rf v${VMOD_DYNAMIC_VER}.tar.gz libvmod-dynamic-${VMOD_DYNAMIC_VER} && \
+    rm -rf prometheus_varnish_exporter*
+
 
 FROM debian:buster-20210816-slim
+COPY --from=builder /usr/bin/prometheus* /usr/bin
 COPY --from=builder /usr/bin/varnish* /usr/bin/
 COPY --from=builder /usr/sbin/varnish* /usr/sbin/
 COPY --from=builder /usr/lib/varnish/ /usr/lib/varnish/
@@ -44,5 +50,7 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone &
     chmod +x /entrypoint.sh
 
 WORKDIR /etc/varnish
+
+EXPOSE 9131
 
 ENTRYPOINT [ "/entrypoint.sh" ]

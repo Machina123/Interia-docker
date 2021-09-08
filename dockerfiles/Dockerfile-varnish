@@ -23,7 +23,13 @@ RUN BUILD_PKGS="build-essential pkg-config automake libtool make python3-docutil
     apt -qq -y clean && \
     rm -fr /var/cache/apt/* /var/lib/apt/lists/* && \
     cd ../ && \ 
-    rm -rf v${VMOD_DYNAMIC_VER}.tar.gz libvmod-dynamic-${VMOD_DYNAMIC_VER}
+    rm -rf v${VMOD_DYNAMIC_VER}.tar.gz libvmod-dynamic-${VMOD_DYNAMIC_VER} && \
+    wget https://github.com/jonnenauha/prometheus_varnish_exporter/releases/download/1.6/prometheus_varnish_exporter-1.6.linux-amd64.tar.gz && \
+    tar -zxvf prometheus_varnish_exporter-1.6.linux-amd64.tar.gz && \
+    cp prometheus_varnish_exporter-1.6.linux-amd64/prometheus_varnish_exporter /usr/bin/ && \
+    rm -rf prometheus_varnish_exporter*
+
+EXPOSE 9131
 
 COPY entrypoint.sh /
 

@@ -1,0 +1,165 @@
+x-common: &common
+  restart: unless-stopped
+  logging:
+    options:
+      tag: "{{.Name}}"
+
+x-wp-common: &wp-common
+  <<: *common
+  networks:
+    - wpnet
+  
+
+x-fluentd-common: &fd-common
+  <<: *common
+  networks:
+    - fluentd-net
+
+x-metrics-common: &pm-common
+  <<: *common
+  networks:
+    - wpnet
+    - fluentd-net
+
+x-resource-limits: &limits
+  deploy:
+    resources:
+      limits:
+        cpus: '0.5'
+        memory: 256M
+
+services:
+  wpfront:
+    # Wordpress image tag: 5.8.0-apache
+    # image: wordpress@sha256:865ea4e55495630ae167c2240f6c9969e2fd185e2990c5edfac0914ce513b0cb
+    build:
+      context: ${PWD}/../context/wordpress
+      dockerfile: ${PWD}/../dockerfiles/Dockerfile-wordpress
+    depends_on: 
+      - db
+      - haproxy
+      - varnish
+    env_file:
+      - ${PWD}/../wp.env
+    read_only: yes
+    user: "www-data:www-data"
+    volumes: 
+      - wp-content-root:/var/www/html/wordpress/wp-content
+      - /tmp
+      - /run/lock/apache2
+      - /run/apache2
+      - ${PWD}/../context/wordpress/document-root/healthprobe.php:/var/www/html/wordpress/healthprobe.php:ro
+      - ${PWD}/../context/wordpress/document-root/wp-config.php:/var/www/html/wordpress/wp-config.php:ro
+    deploy:
+      mode: replicated
+      replicas: 2
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    <<: *wp-common
+
+  db:
+    image: percona@sha256:5bc1c13c8f4adfd76ceaac425877e2de2fcd9c33ab685c639e55b23e97eb0c0a
+    environment: 
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: wpTest2021!
+      MYSQL_DATABASE: wordpress
+      MYSQL_ROOT_PASSWORD: zaq1@WSXcde3
+    volumes:
+      - wp-db-root:/var/lib/mysql
+      - wp-db-log-root:/var/log/mysql
+      - ${PWD}/../context/mysql:/docker-entrypoint-initdb.d/:ro
+    <<: *wp-common
+    <<: *limits
+
+  haproxy:
+    build:
+      context: ${PWD}/../context/haproxy
+      dockerfile: ${PWD}/../dockerfiles/Dockerfile-haproxy
+    ports:
+      - 80:80
+      - 443:443
+      - 55666:5666
+    volumes:
+      - ${PWD}/../context/haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - ${PWD}/../context/haproxy/cert.pem:/etc/ssl/certs/test/cert.pem:ro
+    depends_on: 
+      - db
+    <<: *wp-common
+    <<: *limits
+  
+  haproxy-exporter:
+    image: quay.io/prometheus/haproxy-exporter:v0.12.0
+    ports: 
+      - 61001:9101
+    depends_on:
+      - haproxy
+    command: --haproxy.scrape-uri="http://admin:supersecret@haproxy:5666/stats;csv"
+    <<: *pm-common
+    <<: *limits
+
+  varnish:
+    build: 
+      context: ${PWD}/../context/varnish
+      dockerfile: ${PWD}/../dockerfiles/Dockerfile-varnish-multistage
+    depends_on: 
+      - haproxy
+    ports:
+      - 8080:80
+      - 61002:9131
+    env_file:
+      - ${PWD}/../varnish.env
+    volumes:
+      - ${PWD}/../context/varnish/default.vcl:/etc/varnish/default.vcl:ro
+    tmpfs: /var/lib/varnish:exec
+    <<: *wp-common
+    <<: *limits
+  
+  fluentd:
+    build:
+      context: ${PWD}/../context/fluentd
+      dockerfile: ${PWD}/../dockerfiles/Dockerfile-fluentd
+    user: root:root
+    volumes:
+      - /var/lib/docker/containers:/mnt/docker-containers:ro
+      - /var/lib/docker/volumes/wp-docker_wp-db-root/_data:/mnt/mysql-data:ro
+      - /tmp/fluentd-out:/mnt/output:rw
+      - $PWD/../context/fluentd/fluentd.conf:/fluentd/etc/fluent.conf
+    logging:
+      driver: local
+    <<: *fd-common
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.37.5
+    ports:
+    - 61003:8080
+    volumes:
+    - /:/rootfs:ro
+    - /var/run:/var/run:rw
+    - /sys:/sys:ro
+    - /var/lib/docker/:/var/lib/docker:ro
+    depends_on:
+    - redis
+    privileged: true
+    <<: *pm-common
+    <<: *limits
+  
+  redis:
+    image: redis:6.2.5
+    container_name: redis
+    ports:
+      - 6379
+    <<: *pm-common
+    <<: *limits
+
+
+volumes:
+  wp-db-root: {}
+  wp-db-log-root: {}
+  wp-content-root: {}
+
+networks:
+  wpnet: {}
+  fluentd-net: 
+    external: true
