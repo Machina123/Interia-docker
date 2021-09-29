@@ -6,9 +6,10 @@ USER root
 # below RUN includes plugin as examples elasticsearch is not required
 # you may customize including plugins as you wish
 RUN buildDeps="sudo make gcc g++ libc-dev" \
+ && runtimeDeps="libsnappy-dev"\
  && apt-get update \
- && apt-get install -y --no-install-recommends $buildDeps\
- && sudo gem install fluent-plugin-grafana-loki fluent-plugin-mysqlslowquery\
+ && apt-get install -y --no-install-recommends $buildDeps $runtimeDeps \
+ && sudo gem install fluent-plugin-grafana-loki fluent-plugin-mysqlslowquery fluent-plugin-kafka snappy \
  && sudo gem sources --clear-all \
  && SUDO_FORCE_REMOVE=yes \
     apt-get purge -y --auto-remove \

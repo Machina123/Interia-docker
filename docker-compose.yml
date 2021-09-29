@@ -1,0 +1,450 @@
+x-common: &common
+  restart: unless-stopped
+  logging:
+    options:
+      tag: "{{.Name}}"
+
+x-wp-common: &wp-common
+  <<: *common
+  networks:
+    - wpnet
+  
+
+x-fluentd-common: &fd-common
+  <<: *common
+  networks:
+    - fluentd-net
+
+x-metrics-common: &pm-common
+  <<: *common
+  networks:
+    - wpnet
+    - fluentd-net
+
+x-kafka-common: &kafka
+  <<: *pm-common
+  image: bitnami/kafka:2.8.0
+  env_file:
+    - ${PWD}/env/kafka.env
+  depends_on:
+    - zookeeper
+  volumes:
+    - /bitnami/kafka
+
+x-resource-limits: &limits
+  deploy:
+    resources:
+      limits:
+        cpus: '0.5'
+        memory: 256M
+
+x-airflow-common:
+  &airflow-common
+  # In order to add custom dependencies or upgrade provider packages you can use your extended image.
+  # Comment the image line, place your Dockerfile in the directory where you placed the docker-compose.yaml
+  # and uncomment the "build" line below, Then run `docker-compose build` to build the images.
+  image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:2.1.4}
+  # build: .
+  env_file:
+    - ${PWD}/env/airflow.env
+  environment:
+    &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+    AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
+    AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
+    AIRFLOW__CORE__FERNET_KEY: ''
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'true'
+    AIRFLOW__API__AUTH_BACKEND: 'airflow.api.auth.backend.basic_auth'
+    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
+  volumes:
+    - ${PWD}/context/airflow/dags:/opt/airflow/dags
+    - ${PWD}/context/airflow/logs:/opt/airflow/logs
+    - ${PWD}/context/airflow/plugins:/opt/airflow/plugins
+  user: "${AIRFLOW_UID:-50000}:${AIRFLOW_GID:-0}"
+  depends_on:
+    &airflow-common-depends-on
+    redis:
+      condition: service_healthy
+    postgres:
+      condition: service_healthy
+
+services:
+  wpfront:
+    build:
+      context: ${PWD}/context/wordpress
+      dockerfile: ${PWD}/dockerfiles/Dockerfile-wordpress
+    depends_on: 
+      - db
+      - haproxy
+      - varnish
+    env_file:
+      - ${PWD}/env/wp.env
+    read_only: yes
+    user: "www-data:www-data"
+    volumes: 
+      - wp-content-root:/var/www/html/wordpress/wp-content
+      - /tmp
+      - /run/lock/apache2
+      - /run/apache2
+      - ${PWD}/context/wordpress/document-root/healthprobe.php:/var/www/html/wordpress/healthprobe.php:ro
+      - ${PWD}/context/wordpress/document-root/wp-config.php:/var/www/html/wordpress/wp-config.php:ro
+    deploy:
+      mode: replicated
+      replicas: 2
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    <<: *wp-common
+
+  db:
+    image: percona@sha256:5bc1c13c8f4adfd76ceaac425877e2de2fcd9c33ab685c639e55b23e97eb0c0a
+    environment: 
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: wpTest2021!
+      MYSQL_DATABASE: wordpress
+      MYSQL_ROOT_PASSWORD: zaq1@WSXcde3
+    volumes:
+      - wp-db-root:/var/lib/mysql
+      - wp-db-log-root:/var/log/mysql
+      - ${PWD}/context/mysql:/docker-entrypoint-initdb.d/:ro
+    <<: *wp-common
+    <<: *limits
+
+  haproxy:
+    build:
+      context: ${PWD}/context/haproxy
+      dockerfile: ${PWD}/dockerfiles/Dockerfile-haproxy
+    ports:
+      - 80:80
+      - 443:443
+      - 55666:5666
+    volumes:
+      - ${PWD}/context/haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - ${PWD}/context/haproxy/cert.pem:/etc/ssl/certs/test/cert.pem:ro
+    depends_on: 
+      - db
+    <<: *wp-common
+    <<: *limits
+  
+  haproxy-exporter:
+    image: quay.io/prometheus/haproxy-exporter:v0.12.0
+    ports: 
+      - 61001:9101
+    depends_on:
+      - haproxy
+    command: --haproxy.scrape-uri="http://admin:supersecret@haproxy:5666/stats;csv"
+    <<: *pm-common
+    <<: *limits
+
+  varnish:
+    build: 
+      context: ${PWD}/context/varnish
+      dockerfile: ${PWD}/dockerfiles/Dockerfile-varnish-multistage
+    depends_on: 
+      - haproxy
+    ports:
+      - 8080:80
+      - 61002:9131
+    env_file:
+      - ${PWD}/env/varnish.env
+    volumes:
+      - ${PWD}/context/varnish/default.vcl:/etc/varnish/default.vcl:ro
+    tmpfs: /var/lib/varnish:exec
+    <<: *wp-common
+    <<: *limits
+  
+  fluentd:
+    build:
+      context: ${PWD}/context/fluentd
+      dockerfile: ${PWD}/dockerfiles/Dockerfile-fluentd
+    user: root:root
+    volumes:
+      - /var/lib/docker/containers:/mnt/docker-containers:ro
+      - /var/lib/docker/volumes/wp-docker_wp-db-root/_data:/mnt/mysql-data:ro
+      - /tmp/fluentd-out:/mnt/output:rw
+      - $PWD/context/fluentd/fluentd.conf:/fluentd/etc/fluent.conf
+    logging:
+      driver: local
+    <<: *fd-common
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.37.5
+    ports:
+    - 61003:8080
+    volumes:
+    - /:/rootfs:ro
+    - /var/run:/var/run:rw
+    - /sys:/sys:ro
+    - /var/lib/docker/:/var/lib/docker:ro
+    depends_on:
+    - redis
+    privileged: true
+    <<: *pm-common
+    <<: *limits
+  
+  redis:
+    image: redis:6.2.5
+    ports:
+      - 6379
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 30s
+      retries: 50
+    <<: *pm-common
+    <<: *limits
+
+  zookeeper:
+    image: bitnami/zookeeper:3.7.0
+    ports:
+      - 62001:8080
+    hostname: zookeeper
+    env_file:
+      - ${PWD}/env/zookeeper.env
+    volumes:
+      - /bitnami/zookeeper
+    <<: *pm-common
+
+  kafka-1:
+    <<: *kafka
+    environment:
+      - KAFKA_BROKER_ID=1
+    
+  kafka-2:
+    <<: *kafka
+    environment:
+      - KAFKA_BROKER_ID=2
+  
+  akhq:
+    image: tchiotludo/akhq
+    volumes:
+      - ${PWD}/context/akhq/akhq.yml:/app/application.yml
+    ports:
+      - 62000:8080
+    depends_on:
+      - kafka-1
+      - kafka-2
+    <<: *pm-common
+
+  clickhouse:
+    image: yandex/clickhouse-server:21.9.2
+    volumes:
+      - clickhouse-storage:/var/lib/clickhouse
+      - ${PWD}/context/clickhouse:/docker-entrypoint-initdb.d:ro
+    <<: *pm-common
+  
+  prometheus:
+    image: prom/prometheus:v2.29.2
+    hostname: prometheus
+    volumes:
+      - ${PWD}/context/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - 9090
+    <<: *fd-common
+    
+  # loki:
+  #   image: grafana/loki:2.3.0
+  #   ports:
+  #     - 3100:3100
+  #   command: -config.file=/etc/loki/local-config.yaml
+  #   volumes:
+  #     - ${PWD}/../context/loki/loki.yaml:/etc/loki/local-config.yaml:ro
+  #   <<: *fd-common
+  
+  grafana:
+    # Grafana image tag: 8.1.2 linux/amd64
+    image: grafana/grafana@sha256:6bda2af009a4d3dd9d6dee3ef0c736ee3ab0a406d2f78fc93aeb5148a2e4219a
+    ports: 
+      - 3000:3000
+    volumes:
+      - grafana-storage:/var/lib/grafana
+    <<: *fd-common
+  
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 5
+    <<: *fd-common
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - 8081:8080
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    <<: *fd-common
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type SchedulerJob --hostname "$${HOSTNAME}"']
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-worker:
+    <<: *airflow-common
+    command: celery worker
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - 'celery --app airflow.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}"'
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    environment:
+      <<: *airflow-common-env
+      # Required to handle warm shutdown of the celery workers properly
+      # See https://airflow.apache.org/docs/docker-stack/entrypoint.html#signal-propagation
+      DUMB_INIT_SETSID: "0"
+    <<: *fd-common
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    # yamllint disable rule:line-length
+    command:
+      - -c
+      - |
+        function ver() {
+          printf "%04d%04d%04d%04d" $${1//./ }
+        }
+        airflow_version=$$(gosu airflow airflow version)
+        airflow_version_comparable=$$(ver $${airflow_version})
+        min_airflow_version=2.1.0
+        min_airflow_version_comparable=$$(ver $${min_airflow_version})
+        if (( airflow_version_comparable < min_airflow_version_comparable )); then
+          echo
+          echo -e "\033[1;31mERROR!!!: Too old Airflow version $${airflow_version}!\e[0m"
+          echo "The minimum Airflow version supported: $${min_airflow_version}. Only use this or higher!"
+          echo
+          exit 1
+        fi
+        if [[ -z "${AIRFLOW_UID}" ]]; then
+          echo
+          echo -e "\033[1;33mWARNING!!!: AIRFLOW_UID not set!\e[0m"
+          echo "If you are on Linux, you SHOULD follow the instructions below to set "
+          echo "AIRFLOW_UID and AIRFLOW_GID environment variables, otherwise files will be owned by root."
+          echo "For other operating systems you can get rid of the warning with manually created .env file:"
+          echo "    See: https://airflow.apache.org/docs/apache-airflow/stable/start/docker.html#setting-the-right-airflow-user"
+          echo
+        fi
+        one_meg=1048576
+        mem_available=$$(($$(getconf _PHYS_PAGES) * $$(getconf PAGE_SIZE) / one_meg))
+        cpus_available=$$(grep -cE 'cpu[0-9]+' /proc/stat)
+        disk_available=$$(df / | tail -1 | awk '{print $$4}')
+        warning_resources="false"
+        if (( mem_available < 4000 )) ; then
+          echo
+          echo -e "\033[1;33mWARNING!!!: Not enough memory available for Docker.\e[0m"
+          echo "At least 4GB of memory required. You have $$(numfmt --to iec $$((mem_available * one_meg)))"
+          echo
+          warning_resources="true"
+        fi
+        if (( cpus_available < 2 )); then
+          echo
+          echo -e "\033[1;33mWARNING!!!: Not enough CPUS available for Docker.\e[0m"
+          echo "At least 2 CPUs recommended. You have $${cpus_available}"
+          echo
+          warning_resources="true"
+        fi
+        if (( disk_available < one_meg * 10 )); then
+          echo
+          echo -e "\033[1;33mWARNING!!!: Not enough Disk space available for Docker.\e[0m"
+          echo "At least 10 GBs recommended. You have $$(numfmt --to iec $$((disk_available * 1024 )))"
+          echo
+          warning_resources="true"
+        fi
+        if [[ $${warning_resources} == "true" ]]; then
+          echo
+          echo -e "\033[1;33mWARNING!!!: You have not enough resources to run Airflow (see above)!\e[0m"
+          echo "Please follow the instructions to increase amount of resources available:"
+          echo "   https://airflow.apache.org/docs/apache-airflow/stable/start/docker.html#before-you-begin"
+          echo
+        fi
+        mkdir -p /sources/logs /sources/dags /sources/plugins
+        chown -R "${AIRFLOW_UID}:${AIRFLOW_GID}" /sources/{logs,dags,plugins}
+        exec /entrypoint airflow version
+    # yamllint enable rule:line-length
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_UPGRADE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
+      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
+    user: "0:${AIRFLOW_GID:-0}"
+    volumes:
+      - .:/sources
+    networks:
+      - fluentd-net
+
+  airflow-cli:
+    <<: *airflow-common
+    profiles:
+      - debug
+    environment:
+      <<: *airflow-common-env
+      CONNECTION_CHECK_MAX_COUNT: "0"
+    # Workaround for entrypoint issue. See: https://github.com/apache/airflow/issues/16252
+    command:
+      - bash
+      - -c
+      - airflow
+    <<: *fd-common
+
+  flower:
+    <<: *airflow-common
+    command: celery flower
+    ports:
+      - 5555:5555
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:5555/"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    <<: *fd-common
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+volumes:
+  wp-db-root: {}
+  wp-db-log-root: {}
+  wp-content-root: {}
+  grafana-storage: {}
+  clickhouse-storage: {}
+  postgres-db-volume: {}
+
+networks:
+  wpnet: {}
+  fluentd-net: {}
